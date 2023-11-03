@@ -1,42 +1,15 @@
 -- {"id":9969,"ver":"1.0.0","libVer":"1.0.0","author":"bubloo"}
 
-local id = 9969
 local baseURL = "https://ranobes.top/"
-local name = "Ranobes"
-local imageURL = "https://ranobes.top/templates/Dark/images/favicon.ico"
-local hasCloudFlare = true
-local hasSearch = true
-local isSearchIncrementing = true
-local searchFilters = {
-}
-local settings = {
-}
-local settingsModel = {
-}
-local chapterType = ChapterType.HTML
-local startIndex = 1
 
---- Listings that users can navigate in Shosetsu.
-local listings = {
-    Listing("Novels", true, function(data)
-        local page = data[PAGE]
-        local url = baseURL .. "novels/page/" .. page
-        local document = GETDocument(url)
-        return {}
-    end)
-}
 
---- Shrink the website url down. This is for space saving purposes.
---- @param url string Full URL to shrink.
---- @param type int Either KEY_CHAPTER_URL or KEY_NOVEL_URL.
---- @return string Shrunk URL.
 local function shrinkURL(url, type)
-    if type == KEY_NOVEL_URL then
-        url = url:match("/novels/([0-9]+)-([a-z-]+)")
-    else
-        url = url:gsub("^.-ranobes%.top/?", "")
-    end
-    return url
+    --if type == KEY_NOVEL_URL then
+    --    url = url:match("/novels/([0-9]+)-([a-z-]+)")
+    --else
+    --    url = url:gsub("^.-ranobes%.top/?", "")
+    --end
+    return url:gsub(".-ranobes.top","")
 end
 
 local function expandURL(url, type)
@@ -47,97 +20,13 @@ local function expandURL(url, type)
     return baseURL .. url
 end
 
---- Get a chapter passage based on its chapterURL.
----
---- Required.
----
---- @param chapterURL string The chapters shrunken URL.
---- @return string Strings in lua are byte arrays. If you are not outputting strings/html you can return a binary stream.
-local function getPassage(chapterURL)
-    local chap = GETDocument(expandURL(chapterURL)):selectFirst("#arrticle")
-    local title = chap:selectFirst(".title"):text()
-
-    -- insert title at start of chapter
-    chap:prepend("<h1>" .. title .. "</h1>")
-
-    -- remove empty paragraphs & forced paragraph indents
-    local toRemove = {}
-    chap:traverse(NodeVisitor(function(v)
-        if v:tagName() == "p" or v:tagName() == "span" then
-            local nr = 0
-            local tnodes = v:textNodes()
-
-            -- remove whitespace at the start of the paragraph
-            for i=0,tnodes:size()-1 do
-                local tn = tnodes:get(i)
-                local o = tn:text()
-                local s = o:gsub("^[ \n ]+", "")
-
-                if o ~= s then
-                    tn:text(s)
-                end
-                if s ~= "" then
-                    break
-                else
-                    nr = nr + 1
-                end
-            end
-
-            -- remove empty paragraphs
-            if v:childNodeSize() == nr then
-                toRemove[#toRemove+1] = v
-            end
-        end
-
-        if v:hasAttr("border") then
-            v:removeAttr("border")
-        end
-    end, nil, true))
-
-    for _,v in pairs(toRemove) do
-        v:remove()
-    end
-
-    return pageOfElem(chap, false, css)
-end
-
---- Load info on a novel.
---- @param novelURL string shrunken novel url.
---- @return NovelInfo
-local function parseNovel(novelURL)
-    local url = shrinkURL(novelURL, KEY_NOVEL_URL)
-
-    --- Novel page, extract info from it.
-    local document = GETDocument(url)
-    info = document:selectFirst(".moreless__full");
-    return NovelInfo()
-end
-
---- Called to search for novels off a website.
----
---- Optional, But required if [hasSearch] is true.
----
---- @param data table @of applied filter values [QUERY] is the search query, may be empty.
---- @return Novel[] | Array
-local function search(data)
-    --- Not required if search is not incrementing.
-    --- @type int
-    local page = data[PAGE]
-
-    --- Get the user text query to pass through.
-    --- @type string
-    local query = data[QUERY]
-
-    return parseTop(GETDocument(baseURL .. "search/" .. query .. "/page/" .. page))
-end
-
 local function parseTop(doc)
     return map(doc:select("h2.title"), function(v)
         local e = v:selectFirst("a")
         return Novel {
             title = text(e),
             link = shrinkURL(e:attr("href")),
-            imageURL = "https://picsum.photos/200/300" -- v:selectFirst("figure")
+            imageURL = doc:selectFirst("figure.cover"):attr("background-image") -- v:selectFirst("figure")
         }
     end)
 end
@@ -145,25 +34,72 @@ end
 -- Return all properties in a lua table.
 return {
     -- Required
-    id = id,
-    name = name,
+    id = 9969,
+    name = "Ranobes",
     baseURL = baseURL,
-    listings = listings, -- Must have at least one listing
-    getPassage = getPassage,
-    parseNovel = parseNovel,
+    imageURL = "https://ranobes.top/templates/Dark/images/favicon.ico",
+    chapterType = ChapterType.HTML,
+
     shrinkURL = shrinkURL,
     expandURL = expandURL,
 
-    -- Optional values to change
-    imageURL = imageURL,
-    hasCloudFlare = hasCloudFlare,
-    hasSearch = hasSearch,
-    isSearchIncrementing = isSearchIncrementing,
-    searchFilters = searchFilters,
-    settings = settingsModel,
-    chapterType = chapterType,
-    startIndex = startIndex,
+    hasCloudFlare = true,
+    hasSearch = true,
+    isSearchIncrementing = true,
+    startIndex = 1,
 
-    -- Required if [hasSearch] is true.
-    search = search,
+    listings = {
+        Listing("Novels", true, function(data)
+            return parseTop(GETDocument(expandURL("/novels/page/" .. data[PAGE])))
+        end)
+    },
+
+    getPassage = function(chapterURL)
+        local htmlElement = GETDocument(expandURL(chapterURL)):selectFirst(".block.story.shortstory")
+        local title = htmlElement:selectFirst(".title"):text()
+        htmlElement = htmlElement:selectFirst("div#arrticle")
+
+        htmlElement:child(0):before("<h1>" .. title .. "</h1>");
+
+        return pageOfElem(htmlElement)
+    end,
+
+    parseNovel = function(novelURL, loadChapters)
+        local doc = GETDocument(expandURL(novelURL))
+
+        local info = NovelInfo {
+            title = doc:selectFirst("h1.title"):text(),
+            imageURL = doc:selectFirst("div.poster > a > img"):attr("src"),
+            description = doc:selectFirst(".moreless__full"),
+            status = ({
+                Active = NovelStatus.PUBLISHING,
+                Completed = NovelStatus.COMPLETED,
+            })[
+            doc:selectFirst('li[title="English translation status"] > span > a'):text()
+            ],
+            genres = map(doc:selectFirst("div#mc-fs-genre"):select("a"):text()),
+            language = doc:selectFirst('span[itemprop="locationCreated"]'):text(),
+            authors = doc:selectFirst('span[itemprop="creator"]'):text(),
+        }
+
+        if loadChapters then
+            info:setChapters(
+                AsList(map(doc:selectFirst("ul.chapters-scroll-list"):children(), function(v)
+                    local a = v:selectFirst("a")
+                    return NovelChapter() {
+                        title = a:text(),
+                        link = a:attr("href"),
+                    }
+                end))
+            )
+        end
+
+        return info
+    end,
+
+    search = function(data)
+        local page = data[PAGE]
+        local query = data[QUERY]
+        return parseTop(GETDocument(baseURL .. "search/" .. query .. "/page/" .. page))
+    end,
 }
